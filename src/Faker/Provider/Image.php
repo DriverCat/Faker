@@ -10,11 +10,7 @@ class Image extends Base
     /**
      * @var string
      */
-    public const BASE_URL = 'https://via.placeholder.com';
-
-    public const FORMAT_JPG = 'jpg';
-    public const FORMAT_JPEG = 'jpeg';
-    public const FORMAT_PNG = 'png';
+    public const BASE_URL = 'https://placebear.com';
 
     /**
      * @var array
@@ -39,7 +35,6 @@ class Image extends Base
      * @param bool        $randomize
      * @param string|null $word
      * @param bool        $gray
-     * @param string      $format
      *
      * @return string
      */
@@ -49,21 +44,9 @@ class Image extends Base
         $category = null,
         $randomize = true,
         $word = null,
-        $gray = false,
-        $format = 'png'
+        $gray = false
     ) {
-        // Validate image format
-        $imageFormats = static::getFormats();
-
-        if (!in_array(strtolower($format), $imageFormats, true)) {
-            throw new \InvalidArgumentException(sprintf(
-                'Invalid image format "%s". Allowable formats are: %s',
-                $format,
-                implode(', ', $imageFormats)
-            ));
-        }
-
-        $size = sprintf('%dx%d.%s', $width, $height, $format);
+        $size = sprintf('%d/%d.jpg', $width, $height);
 
         $imageParts = [];
 
@@ -78,15 +61,11 @@ class Image extends Base
         if ($randomize === true) {
             $imageParts[] = Lorem::word();
         }
-
-        $backgroundColor = $gray === true ? 'CCCCCC' : str_replace('#', '', Color::safeHexColor());
-
+        
         return sprintf(
-            '%s/%s/%s%s',
+            '%s/%s',
             self::BASE_URL,
-            $size,
-            $backgroundColor,
-            count($imageParts) > 0 ? '?text=' . urlencode(implode(' ', $imageParts)) : ''
+            $size
         );
     }
 
@@ -107,8 +86,7 @@ class Image extends Base
         $fullPath = true,
         $randomize = true,
         $word = null,
-        $gray = false,
-        $format = 'png'
+        $gray = false
     ) {
         $dir = null === $dir ? sys_get_temp_dir() : $dir; // GNU/Linux / OS X / Windows compatible
         // Validate directory path
@@ -119,20 +97,37 @@ class Image extends Base
         // Generate a random filename. Use the server address so that a file
         // generated at the same time on a different server won't have a collision.
         $name = md5(uniqid(empty($_SERVER['SERVER_ADDR']) ? '' : $_SERVER['SERVER_ADDR'], true));
-        $filename = sprintf('%s.%s', $name, $format);
+        $filename = $name . '.png';
         $filepath = $dir . DIRECTORY_SEPARATOR . $filename;
 
-        $url = static::imageUrl($width, $height, $category, $randomize, $word, $gray, $format);
+        $url = static::imageUrl($width, $height, $category, $randomize, $word, $gray);
 
         // save file
         if (function_exists('curl_exec')) {
             // use cURL
             $fp = fopen($filepath, 'w');
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_FILE, $fp);
-            $success = curl_exec($ch) && curl_getinfo($ch, CURLINFO_HTTP_CODE) === 200;
+            
+            $curl = curl_init();
+
+            curl_setopt_array($curl, array(
+                CURLOPT_URL => $url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_ENCODING => '',
+                CURLOPT_MAXREDIRS => 10,
+                CURLOPT_TIMEOUT => 0,
+                CURLOPT_FILE => $fp,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+                CURLOPT_CUSTOMREQUEST => 'GET',
+            ));
+
+            $response = curl_exec($curl);
+
+            curl_close($curl);
+
+            $success = curl_exec($curl) && curl_getinfo($curl, CURLINFO_HTTP_CODE) === 200;
+            
             fclose($fp);
-            curl_close($ch);
 
             if (!$success) {
                 unlink($filepath);
@@ -153,19 +148,5 @@ class Image extends Base
         }
 
         return $fullPath ? $filepath : $filename;
-    }
-
-    public static function getFormats(): array
-    {
-        return array_keys(static::getFormatConstants());
-    }
-
-    public static function getFormatConstants(): array
-    {
-        return [
-            static::FORMAT_JPG => constant('IMAGETYPE_JPEG'),
-            static::FORMAT_JPEG => constant('IMAGETYPE_JPEG'),
-            static::FORMAT_PNG => constant('IMAGETYPE_PNG'),
-        ];
     }
 }
